@@ -30,11 +30,69 @@
     box-shadow: 0 1px 4px rgba(0,0,0,0.3);
     font-size: 14px;
   }
+  #sidebar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: 240px;
+    background: white;
+    z-index: 1000;
+    box-shadow: -2px 0 6px rgba(0,0,0,0.3);
+    overflow-y: auto;
+    transition: transform 0.2s ease;
+  }
+  #sidebar.hidden {
+    transform: translateX(100%);
+  }
+  #sidebar h3 {
+    margin: 0;
+    padding: 14px;
+    border-bottom: 1px solid #eee;
+    font-size: 15px;
+  }
+  #sidebar-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  #sidebar-list li {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #sidebar-list li .person-name {
+    font-weight: bold;
+    display: block;
+  }
+  #sidebar-list li .last-seen {
+    color: #777;
+    font-size: 12px;
+  }
+  #sidebar-toggle {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1001;
+    background: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 14px;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
 
 <div id="status">Getting your location...</div>
+<button id="sidebar-toggle">☰ Family</button>
+<div id="sidebar" class="hidden">
+  <h3>Family Members</h3>
+  <ul id="sidebar-list"></ul>
+</div>
 <div id="map"></div>
 
 <!-- Leaflet JS -->
@@ -80,6 +138,23 @@
   let accuracyCircle = null;
   const statusEl = document.getElementById('status');
   const otherMarkers = {}; // keeps track of every other person's marker, keyed by their userId
+  const sidebarList = document.getElementById('sidebar-list');
+
+  document.getElementById('sidebar-toggle').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('hidden');
+  });
+
+  function timeAgo(timestamp) {
+    if (!timestamp) return 'never';
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + 'm ago';
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + 'h ago';
+    const days = Math.floor(hours / 24);
+    return days + 'd ago';
+  }
 
   // ---- 3. Sign in anonymously first. Everything else only starts once we're authenticated. ----
   statusEl.textContent = "Signing in...";
@@ -138,7 +213,7 @@
       statusEl.textContent = "Geolocation not supported by this browser.";
     }
 
-    // ---- 6. Listen for EVERYONE's location (including our own) and draw markers ----
+    // ---- 6. Listen for EVERYONE's location (including our own) and draw markers + sidebar list ----
     db.ref('locations').on('value', (snapshot) => {
       const allLocations = snapshot.val() || {};
 
@@ -167,6 +242,26 @@
           map.removeLayer(otherMarkers[id]);
           delete otherMarkers[id];
         }
+      });
+
+      // ---- Rebuild the sidebar list ----
+      sidebarList.innerHTML = '';
+      Object.keys(allLocations).forEach((id) => {
+        const person = allLocations[id];
+        if (!person) return;
+
+        const li = document.createElement('li');
+        const isMe = id === userId;
+        li.innerHTML = `<span class="person-name">${person.name || 'Unknown'}${isMe ? ' (you)' : ''}</span><span class="last-seen">${timeAgo(person.timestamp)}</span>`;
+
+        li.addEventListener('click', () => {
+          if (typeof person.lat === 'number' && typeof person.lng === 'number') {
+            map.setView([person.lat, person.lng], 16);
+            document.getElementById('sidebar').classList.add('hidden');
+          }
+        });
+
+        sidebarList.appendChild(li);
       });
     });
   });
