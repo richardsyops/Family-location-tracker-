@@ -162,6 +162,16 @@
     font-size: 12px;
     margin-top: 2px;
   }
+  #sidebar-list li.stale {
+    opacity: 0.6;
+  }
+  #sidebar-list li .stale-tag {
+    display: block;
+    color: #7f8c8d;
+    font-weight: bold;
+    font-size: 12px;
+    margin-top: 2px;
+  }
 </style>
 </head>
 <body>
@@ -539,8 +549,8 @@
         },
         {
           enableHighAccuracy: true,
-          maximumAge: 5000,
-          timeout: 10000
+          maximumAge: 10000,
+          timeout: 25000
         }
       );
     } else {
@@ -559,6 +569,7 @@
 
     // ---- 6. Listen for EVERYONE's location (including our own) and draw markers + sidebar list ----
     const knownSosState = {}; // remembers each person's last known SOS state so we only alert on NEW activations
+    const STALE_THRESHOLD_MS = 90 * 1000; // no update in 90s (missed ~6 heartbeats) = likely offline
 
     db.ref('locations').on('value', (snapshot) => {
       const allLocations = snapshot.val() || {};
@@ -570,6 +581,7 @@
         if (!person || typeof person.lat !== 'number' || typeof person.lng !== 'number') return;
 
         const isSos = !!person.sos;
+        const isStale = !person.timestamp || (Date.now() - person.timestamp) > STALE_THRESHOLD_MS;
 
         // Alert once when someone's SOS newly turns on
         if (isSos && !knownSosState[id]) {
@@ -577,9 +589,14 @@
         }
         knownSosState[id] = isSos;
 
-        const iconHtml = isSos
-          ? `<div class="sos-icon-wrapper"><div style="background:#c0392b;color:white;padding:3px 10px;border-radius:10px;font-size:12px;white-space:nowrap;font-weight:bold;">🆘 ${person.name || 'Unknown'}</div></div>`
-          : `<div style="background:#e74c3c;color:white;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap;">${person.name || 'Unknown'}</div>`;
+        let iconHtml;
+        if (isSos) {
+          iconHtml = `<div class="sos-icon-wrapper"><div style="background:#c0392b;color:white;padding:3px 10px;border-radius:10px;font-size:12px;white-space:nowrap;font-weight:bold;">🆘 ${person.name || 'Unknown'}</div></div>`;
+        } else if (isStale) {
+          iconHtml = `<div style="background:#95a5a6;color:white;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap;opacity:0.7;">⚠️ ${person.name || 'Unknown'}</div>`;
+        } else {
+          iconHtml = `<div style="background:#e74c3c;color:white;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap;">${person.name || 'Unknown'}</div>`;
+        }
 
         if (otherMarkers[id]) {
           otherMarkers[id].setLatLng([person.lat, person.lng]);
@@ -625,7 +642,11 @@
         if (person.sos) li.classList.add('sos');
         const sosLine = person.sos ? `<span class="sos-tag">🆘 SOS ACTIVE</span>` : '';
 
-        li.innerHTML = `<span class="person-name">${person.name || 'Unknown'}${isMe ? ' (you)' : ''}</span><span class="last-seen">${timeAgo(person.timestamp)}</span>${distanceLine}${batteryLine}${sosLine}`;
+        const isStale = !isMe && (!person.timestamp || (Date.now() - person.timestamp) > STALE_THRESHOLD_MS);
+        if (isStale) li.classList.add('stale');
+        const staleLine = isStale ? `<span class="stale-tag">⚠️ Possibly offline</span>` : '';
+
+        li.innerHTML = `<span class="person-name">${person.name || 'Unknown'}${isMe ? ' (you)' : ''}</span><span class="last-seen">${timeAgo(person.timestamp)}</span>${distanceLine}${batteryLine}${sosLine}${staleLine}`;
 
         li.addEventListener('click', () => {
           if (typeof person.lat === 'number' && typeof person.lng === 'number') {
