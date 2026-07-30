@@ -109,6 +109,45 @@
     font-size: 14px;
     cursor: pointer;
   }
+  #sos-btn {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1001;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    padding: 14px 28px;
+    font-size: 16px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    cursor: pointer;
+  }
+  #sos-btn.active {
+    background: #c0392b;
+    animation: sos-pulse 1s infinite;
+  }
+  @keyframes sos-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(231,76,60,0.7); }
+    70% { box-shadow: 0 0 0 20px rgba(231,76,60,0); }
+    100% { box-shadow: 0 0 0 0 rgba(231,76,60,0); }
+  }
+  .sos-icon-wrapper {
+    animation: sos-pulse 1s infinite;
+    border-radius: 50%;
+  }
+  #sidebar-list li.sos {
+    background: #fdecea;
+  }
+  #sidebar-list li .sos-tag {
+    display: block;
+    color: #c0392b;
+    font-weight: bold;
+    font-size: 12px;
+    margin-top: 2px;
+  }
 </style>
 </head>
 <body>
@@ -120,6 +159,7 @@
   <ul id="sidebar-list"></ul>
 </div>
 <div id="map"></div>
+<button id="sos-btn">🆘 SOS</button>
 
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -273,7 +313,28 @@
     let lastKnownLat = null;
     let lastKnownLng = null;
 
-    // ---- Battery status sharing ----
+    // ---- SOS / panic button ----
+    let sosActive = false;
+    const sosBtn = document.getElementById('sos-btn');
+
+    sosBtn.addEventListener('click', () => {
+      if (!sosActive) {
+        const confirmSos = confirm("Send an SOS alert to your family with your current location?");
+        if (!confirmSos) return;
+        sosActive = true;
+        sosBtn.textContent = "🆘 Cancel SOS";
+        sosBtn.classList.add('active');
+      } else {
+        sosActive = false;
+        sosBtn.textContent = "🆘 SOS";
+        sosBtn.classList.remove('active');
+      }
+
+      db.ref('locations/' + userId).update({
+        sos: sosActive,
+        sosAt: sosActive ? Date.now() : null
+      });
+    });
     let batteryLevel = null;
     let batteryCharging = null;
 
@@ -349,6 +410,8 @@
     }, 15000);
 
     // ---- 6. Listen for EVERYONE's location (including our own) and draw markers + sidebar list ----
+    const knownSosState = {}; // remembers each person's last known SOS state so we only alert on NEW activations
+
     db.ref('locations').on('value', (snapshot) => {
       const allLocations = snapshot.val() || {};
 
@@ -358,15 +421,24 @@
         const person = allLocations[id];
         if (!person || typeof person.lat !== 'number' || typeof person.lng !== 'number') return;
 
+        const isSos = !!person.sos;
+
+        // Alert once when someone's SOS newly turns on
+        if (isSos && !knownSosState[id]) {
+          alert(`🆘 SOS ALERT from ${person.name || 'Unknown'}! Check the map now.`);
+        }
+        knownSosState[id] = isSos;
+
+        const iconHtml = isSos
+          ? `<div class="sos-icon-wrapper"><div style="background:#c0392b;color:white;padding:3px 10px;border-radius:10px;font-size:12px;white-space:nowrap;font-weight:bold;">🆘 ${person.name || 'Unknown'}</div></div>`
+          : `<div style="background:#e74c3c;color:white;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap;">${person.name || 'Unknown'}</div>`;
+
         if (otherMarkers[id]) {
           otherMarkers[id].setLatLng([person.lat, person.lng]);
+          otherMarkers[id].setIcon(L.divIcon({ className: 'other-user-icon', html: iconHtml, iconSize: null }));
         } else {
           otherMarkers[id] = L.marker([person.lat, person.lng], {
-            icon: L.divIcon({
-              className: 'other-user-icon',
-              html: `<div style="background:#e74c3c;color:white;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap;">${person.name || 'Unknown'}</div>`,
-              iconSize: null
-            })
+            icon: L.divIcon({ className: 'other-user-icon', html: iconHtml, iconSize: null })
           }).addTo(map);
         }
       });
@@ -402,7 +474,10 @@
           batteryLine = `<span class="battery${isLow ? ' low' : ''}">🔋 ${person.battery}%${person.charging ? ' ⚡' : ''}</span>`;
         }
 
-        li.innerHTML = `<span class="person-name">${person.name || 'Unknown'}${isMe ? ' (you)' : ''}</span><span class="last-seen">${timeAgo(person.timestamp)}</span>${distanceLine}${batteryLine}`;
+        if (person.sos) li.classList.add('sos');
+        const sosLine = person.sos ? `<span class="sos-tag">🆘 SOS ACTIVE</span>` : '';
+
+        li.innerHTML = `<span class="person-name">${person.name || 'Unknown'}${isMe ? ' (you)' : ''}</span><span class="last-seen">${timeAgo(person.timestamp)}</span>${distanceLine}${batteryLine}${sosLine}`;
 
         li.addEventListener('click', () => {
           if (typeof person.lat === 'number' && typeof person.lng === 'number') {
