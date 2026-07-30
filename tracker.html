@@ -172,16 +172,138 @@
     font-size: 12px;
     margin-top: 2px;
   }
+  #games-btn {
+    position: absolute;
+    top: 10px;
+    right: 110px;
+    z-index: 1001;
+    background: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  #games-modal {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #games-modal.hidden { display: none; }
+  #games-modal-inner {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    width: 90%;
+    max-width: 340px;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  #games-modal-inner h2 {
+    margin-top: 0;
+    font-size: 18px;
+  }
+  .game-menu-btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    margin: 8px 0;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #f9f9f9;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  #games-close-btn, .game-back-btn {
+    background: none;
+    border: none;
+    color: #2980b9;
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: 10px;
+  }
+  #ttt-board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 12px 0;
+  }
+  #ttt-board .cell {
+    aspect-ratio: 1;
+    background: #f0f0f0;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    font-weight: bold;
+    cursor: pointer;
+    user-select: none;
+  }
+  #ttt-status {
+    font-size: 14px;
+    margin: 6px 0;
+    text-align: center;
+    font-weight: bold;
+  }
+  #treasure-status {
+    font-size: 14px;
+    margin: 10px 0;
+    line-height: 1.6;
+  }
+  #treasure-distance {
+    font-size: 28px;
+    font-weight: bold;
+    text-align: center;
+    color: #e67e22;
+    margin: 10px 0;
+  }
 </style>
 </head>
 <body>
 
 <div id="status">Getting your location...</div>
 <button id="sidebar-toggle">☰ Family</button>
+<button id="games-btn">🎮 Games</button>
 <div id="sidebar" class="hidden">
   <h3>Family Members <button id="edit-name-btn">✏️ Edit my name</button></h3>
   <ul id="sidebar-list"></ul>
 </div>
+
+<div id="games-modal" class="hidden">
+  <div id="games-modal-inner">
+    <button id="games-close-btn">✕ Close</button>
+
+    <div id="games-menu">
+      <h2>🎮 Games</h2>
+      <button class="game-menu-btn" id="open-ttt-btn">⭕ Tic-Tac-Toe</button>
+      <button class="game-menu-btn" id="open-treasure-btn">🗺️ Treasure Hunt</button>
+    </div>
+
+    <div id="ttt-view" class="hidden">
+      <button class="game-back-btn" id="ttt-back-btn">← Back</button>
+      <h2>⭕ Tic-Tac-Toe</h2>
+      <div id="ttt-status">Loading...</div>
+      <div id="ttt-board"></div>
+      <button class="game-menu-btn" id="ttt-new-btn">Start New Game</button>
+    </div>
+
+    <div id="treasure-view" class="hidden">
+      <button class="game-back-btn" id="treasure-back-btn">← Back</button>
+      <h2>🗺️ Treasure Hunt</h2>
+      <div id="treasure-status">Loading...</div>
+      <div id="treasure-distance"></div>
+      <button class="game-menu-btn" id="treasure-start-btn">Hide Treasure Here (become host)</button>
+      <button class="game-menu-btn" id="treasure-cancel-btn">Cancel Hunt</button>
+    </div>
+  </div>
+</div>
+
 <div id="map"></div>
 <button id="sos-btn">🆘 SOS</button>
 <button id="shake-btn">⚪ Shock Detection OFF</button>
@@ -496,6 +618,194 @@
     let batteryLevel = null;
     let batteryCharging = null;
 
+    // ==== GAMES ====
+    const gamesModal = document.getElementById('games-modal');
+    const gamesMenu = document.getElementById('games-menu');
+    const tttView = document.getElementById('ttt-view');
+    const treasureView = document.getElementById('treasure-view');
+
+    function showGamesView(view) {
+      gamesMenu.classList.add('hidden');
+      tttView.classList.add('hidden');
+      treasureView.classList.add('hidden');
+      if (view) view.classList.remove('hidden');
+    }
+
+    document.getElementById('games-btn').addEventListener('click', () => {
+      gamesModal.classList.remove('hidden');
+      showGamesView(gamesMenu);
+    });
+    document.getElementById('games-close-btn').addEventListener('click', () => {
+      gamesModal.classList.add('hidden');
+    });
+    document.getElementById('open-ttt-btn').addEventListener('click', () => showGamesView(tttView));
+    document.getElementById('open-treasure-btn').addEventListener('click', () => showGamesView(treasureView));
+    document.getElementById('ttt-back-btn').addEventListener('click', () => showGamesView(gamesMenu));
+    document.getElementById('treasure-back-btn').addEventListener('click', () => showGamesView(gamesMenu));
+
+    // ---- Tic-Tac-Toe: one shared game slot, synced live via Firebase ----
+    const tttRef = db.ref('games/tictactoe');
+    const tttBoardEl = document.getElementById('ttt-board');
+    const tttStatusEl = document.getElementById('ttt-status');
+
+    // Build the 9 empty cells once
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.index = i;
+      cell.addEventListener('click', () => tttMakeMove(i));
+      tttBoardEl.appendChild(cell);
+    }
+
+    function tttCheckWinner(board) {
+      const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+      for (const [a,b,c] of lines) {
+        if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
+      }
+      if (board.every(cell => cell)) return 'draw';
+      return null;
+    }
+
+    function tttMakeMove(index) {
+      tttRef.once('value', (snap) => {
+        const game = snap.val();
+        if (!game || game.winner) return;
+
+        const mySymbol = game.playerX === userId ? 'X' : (game.playerO === userId ? 'O' : null);
+        if (!mySymbol) return; // not a player in this game
+        if (game.turn !== mySymbol) return; // not your turn
+        if (game.board[index]) return; // cell taken
+
+        const newBoard = [...game.board];
+        newBoard[index] = mySymbol;
+        const winner = tttCheckWinner(newBoard);
+
+        tttRef.update({
+          board: newBoard,
+          turn: mySymbol === 'X' ? 'O' : 'X',
+          winner: winner || null
+        });
+      });
+    }
+
+    document.getElementById('ttt-new-btn').addEventListener('click', () => {
+      tttRef.set({
+        board: Array(9).fill(null),
+        turn: 'X',
+        playerX: userId,
+        playerXName: userName,
+        playerO: null,
+        playerOName: null,
+        winner: null
+      });
+    });
+
+    tttRef.on('value', (snap) => {
+      const game = snap.val();
+
+      if (!game) {
+        tttStatusEl.textContent = "No game yet - tap 'Start New Game'.";
+        tttBoardEl.querySelectorAll('.cell').forEach(c => c.textContent = '');
+        return;
+      }
+
+      // Auto-join as O if a game is waiting and it's not us
+      if (game.playerX && !game.playerO && game.playerX !== userId) {
+        tttRef.update({ playerO: userId, playerOName: userName });
+        return; // the update will re-trigger this listener
+      }
+
+      tttBoardEl.querySelectorAll('.cell').forEach((c, i) => {
+        c.textContent = game.board[i] === 'X' ? '❌' : (game.board[i] === 'O' ? '⭕' : '');
+      });
+
+      const mySymbol = game.playerX === userId ? 'X' : (game.playerO === userId ? 'O' : null);
+
+      if (game.winner === 'draw') {
+        tttStatusEl.textContent = "It's a draw!";
+      } else if (game.winner) {
+        const winnerName = game.winner === 'X' ? game.playerXName : game.playerOName;
+        tttStatusEl.textContent = `${winnerName} wins! 🎉`;
+      } else if (!game.playerO) {
+        tttStatusEl.textContent = `Waiting for an opponent to join... (${game.playerXName} is ❌)`;
+      } else if (!mySymbol) {
+        tttStatusEl.textContent = `${game.playerXName} (❌) vs ${game.playerOName} (⭕) - spectating`;
+      } else {
+        const turnName = game.turn === 'X' ? game.playerXName : game.playerOName;
+        tttStatusEl.textContent = game.turn === mySymbol ? "Your turn!" : `Waiting for ${turnName}...`;
+      }
+    });
+
+    // ---- Treasure Hunt: host hides a spot, others get live distance-only clues ----
+    const treasureRef = db.ref('games/treasureHunt');
+    const treasureStatusEl = document.getElementById('treasure-status');
+    const treasureDistanceEl = document.getElementById('treasure-distance');
+    const FOUND_RADIUS_METERS = 15;
+    let currentTreasure = null;
+
+    document.getElementById('treasure-start-btn').addEventListener('click', () => {
+      if (lastKnownLat === null) {
+        alert("We don't have your location yet - wait a moment and try again.");
+        return;
+      }
+      treasureRef.set({
+        active: true,
+        hostId: userId,
+        hostName: userName,
+        lat: lastKnownLat,
+        lng: lastKnownLng,
+        foundBy: null,
+        startedAt: Date.now()
+      });
+    });
+
+    document.getElementById('treasure-cancel-btn').addEventListener('click', () => {
+      treasureRef.set(null);
+    });
+
+    function checkTreasureDistance() {
+      if (!currentTreasure || !currentTreasure.active || currentTreasure.foundBy) return;
+      if (currentTreasure.hostId === userId) return;
+      if (lastKnownLat === null) return;
+
+      const dist = distanceMeters(lastKnownLat, lastKnownLng, currentTreasure.lat, currentTreasure.lng);
+      treasureStatusEl.textContent = `${currentTreasure.hostName} hid a treasure nearby! Get within ${FOUND_RADIUS_METERS}m to find it.`;
+      treasureDistanceEl.textContent = formatDistance(dist);
+
+      if (dist <= FOUND_RADIUS_METERS) {
+        treasureRef.update({ foundBy: userId, foundByName: userName });
+      }
+    }
+
+    treasureRef.on('value', (snap) => {
+      currentTreasure = snap.val();
+
+      if (!currentTreasure || !currentTreasure.active) {
+        treasureStatusEl.textContent = "No treasure hunt active. Tap 'Hide Treasure Here' to start one - your current location becomes the secret spot!";
+        treasureDistanceEl.textContent = '';
+        return;
+      }
+
+      if (currentTreasure.foundBy) {
+        treasureStatusEl.textContent = `🏆 Found by ${currentTreasure.foundByName}! Hidden by ${currentTreasure.hostName}.`;
+        treasureDistanceEl.textContent = '';
+        return;
+      }
+
+      if (currentTreasure.hostId === userId) {
+        treasureStatusEl.textContent = `You hid the treasure! Waiting for someone to find it...`;
+        treasureDistanceEl.textContent = '🙈';
+        return;
+      }
+
+      if (lastKnownLat === null) {
+        treasureStatusEl.textContent = "Getting your location to calculate distance...";
+        return;
+      }
+
+      checkTreasureDistance();
+    });
+
     if (navigator.getBattery) {
       navigator.getBattery().then((battery) => {
         function pushBatteryStatus() {
@@ -542,6 +852,8 @@
             lng: lng,
             timestamp: Date.now()
           });
+
+          checkTreasureDistance();
         },
         (error) => {
           statusEl.textContent = "Location error: " + error.message;
