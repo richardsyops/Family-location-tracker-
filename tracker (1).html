@@ -43,6 +43,7 @@
 <!-- Firebase (compat SDK - works with plain <script> tags, no build tools needed) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
 <script>
   // ---- 1. Firebase setup ----
@@ -58,13 +59,7 @@
 
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
-
-  // Give this device a unique, persistent ID (stored so it stays the same on reload)
-  let userId = localStorage.getItem('trackerUserId');
-  if (!userId) {
-    userId = 'user-' + Math.random().toString(36).substring(2, 9);
-    localStorage.setItem('trackerUserId', userId);
-  }
+  const auth = firebase.auth();
 
   // Ask for a display name once, and remember it
   let userName = localStorage.getItem('trackerUserName');
@@ -86,78 +81,93 @@
   const statusEl = document.getElementById('status');
   const otherMarkers = {}; // keeps track of every other person's marker, keyed by their userId
 
-  // ---- 3. Get and watch the browser's GPS location ----
-  if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        const accuracy = position.coords.accuracy; // in meters
+  // ---- 3. Sign in anonymously first. Everything else only starts once we're authenticated. ----
+  statusEl.textContent = "Signing in...";
 
-        statusEl.textContent = `Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)} (±${Math.round(accuracy)}m)`;
+  auth.signInAnonymously().catch((error) => {
+    statusEl.textContent = "Sign-in error: " + error.message;
+    console.error(error);
+  });
 
-        // Move the map + marker
-        if (!marker) {
-          marker = L.marker([lat, lng]).addTo(map);
-          accuracyCircle = L.circle([lat, lng], { radius: accuracy, color: '#3388ff', fillOpacity: 0.1 }).addTo(map);
-          map.setView([lat, lng], 16);
-        } else {
-          marker.setLatLng([lat, lng]);
-          accuracyCircle.setLatLng([lat, lng]);
-          accuracyCircle.setRadius(accuracy);
+  auth.onAuthStateChanged((user) => {
+    if (!user) return; // not signed in yet, wait
+
+    const userId = user.uid; // this now matches auth.uid, which our database rules check against
+    statusEl.textContent = "Getting your location...";
+
+    // ---- 4. Get and watch the browser's GPS location ----
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = position.coords.accuracy; // in meters
+
+          statusEl.textContent = `Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)} (±${Math.round(accuracy)}m)`;
+
+          // Move the map + marker
+          if (!marker) {
+            marker = L.marker([lat, lng]).addTo(map);
+            accuracyCircle = L.circle([lat, lng], { radius: accuracy, color: '#3388ff', fillOpacity: 0.1 }).addTo(map);
+            map.setView([lat, lng], 16);
+          } else {
+            marker.setLatLng([lat, lng]);
+            accuracyCircle.setLatLng([lat, lng]);
+            accuracyCircle.setRadius(accuracy);
+          }
+
+          // ---- 5. Push location to Firebase ----
+          db.ref('locations/' + userId).set({
+            name: userName,
+            lat: lat,
+            lng: lng,
+            timestamp: Date.now()
+          });
+        },
+        (error) => {
+          statusEl.textContent = "Location error: " + error.message;
+          console.error(error);
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 10000
         }
+      );
+    } else {
+      statusEl.textContent = "Geolocation not supported by this browser.";
+    }
 
-        // ---- 4. Push location to Firebase ----
-        db.ref('locations/' + userId).set({
-          name: userName,
-          lat: lat,
-          lng: lng,
-          timestamp: Date.now()
-        });
-      },
-      (error) => {
-        statusEl.textContent = "Location error: " + error.message;
-        console.error(error);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 5000,
-        timeout: 10000
-      }
-    );
-  } else {
-    statusEl.textContent = "Geolocation not supported by this browser.";
-  }
+    // ---- 6. Listen for EVERYONE's location (including our own) and draw markers ----
+    db.ref('locations').on('value', (snapshot) => {
+      const allLocations = snapshot.val() || {};
 
-  // ---- 5. Listen for EVERYONE's location (including our own) and draw markers ----
-  db.ref('locations').on('value', (snapshot) => {
-    const allLocations = snapshot.val() || {};
+      Object.keys(allLocations).forEach((id) => {
+        if (id === userId) return; // skip ourselves, we already draw our own marker above
 
-    Object.keys(allLocations).forEach((id) => {
-      if (id === userId) return; // skip ourselves, we already draw our own marker above
+        const person = allLocations[id];
+        if (!person || typeof person.lat !== 'number' || typeof person.lng !== 'number') return;
 
-      const person = allLocations[id];
-      if (!person || typeof person.lat !== 'number' || typeof person.lng !== 'number') return;
+        if (otherMarkers[id]) {
+          otherMarkers[id].setLatLng([person.lat, person.lng]);
+        } else {
+          otherMarkers[id] = L.marker([person.lat, person.lng], {
+            icon: L.divIcon({
+              className: 'other-user-icon',
+              html: `<div style="background:#e74c3c;color:white;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap;">${person.name || 'Unknown'}</div>`,
+              iconSize: null
+            })
+          }).addTo(map);
+        }
+      });
 
-      if (otherMarkers[id]) {
-        otherMarkers[id].setLatLng([person.lat, person.lng]);
-      } else {
-        otherMarkers[id] = L.marker([person.lat, person.lng], {
-          icon: L.divIcon({
-            className: 'other-user-icon',
-            html: `<div style="background:#e74c3c;color:white;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap;">${person.name || 'Unknown'}</div>`,
-            iconSize: null
-          })
-        }).addTo(map);
-      }
-    });
-
-    // Remove markers for anyone no longer in the database
-    Object.keys(otherMarkers).forEach((id) => {
-      if (!allLocations[id]) {
-        map.removeLayer(otherMarkers[id]);
-        delete otherMarkers[id];
-      }
+      // Remove markers for anyone no longer in the database
+      Object.keys(otherMarkers).forEach((id) => {
+        if (!allLocations[id]) {
+          map.removeLayer(otherMarkers[id]);
+          delete otherMarkers[id];
+        }
+      });
     });
   });
 </script>
