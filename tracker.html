@@ -207,6 +207,24 @@
     localStorage.setItem('trackerUserName', userName);
   }
 
+  // ---- Notification permission: needed so SOS alerts can show even if this tab isn't focused ----
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+
+  function notifySos(personName) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const n = new Notification('🆘 SOS ALERT', {
+        body: `${personName} triggered an SOS! Open the tracker to see their location.`,
+        requireInteraction: true
+      });
+      n.onclick = () => { window.focus(); n.close(); };
+    } else {
+      // Fallback if notification permission was never granted
+      alert(`🆘 SOS ALERT from ${personName}! Check the map now.`);
+    }
+  }
+
   // ---- 2. Map setup ----
   const map = L.map('map').setView([9.0820, 8.6753], 6); // default: center of Nigeria
 
@@ -555,7 +573,7 @@
 
         // Alert once when someone's SOS newly turns on
         if (isSos && !knownSosState[id]) {
-          alert(`🆘 SOS ALERT from ${person.name || 'Unknown'}! Check the map now.`);
+          notifySos(person.name || 'Unknown');
         }
         knownSosState[id] = isSos;
 
