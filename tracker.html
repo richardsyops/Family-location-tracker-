@@ -59,8 +59,19 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  // Give this device/user a simple ID for now (we'll make this smarter later)
-  const userId = "me"; // TODO: replace with real user login later
+  // Give this device a unique, persistent ID (stored so it stays the same on reload)
+  let userId = localStorage.getItem('trackerUserId');
+  if (!userId) {
+    userId = 'user-' + Math.random().toString(36).substring(2, 9);
+    localStorage.setItem('trackerUserId', userId);
+  }
+
+  // Ask for a display name once, and remember it
+  let userName = localStorage.getItem('trackerUserName');
+  if (!userName) {
+    userName = prompt("What's your name? (shown on the map to others)") || "Unknown";
+    localStorage.setItem('trackerUserName', userName);
+  }
 
   // ---- 2. Map setup ----
   const map = L.map('map').setView([9.0820, 8.6753], 6); // default: center of Nigeria
@@ -73,6 +84,7 @@
   let marker = null;
   let accuracyCircle = null;
   const statusEl = document.getElementById('status');
+  const otherMarkers = {}; // keeps track of every other person's marker, keyed by their userId
 
   // ---- 3. Get and watch the browser's GPS location ----
   if (navigator.geolocation) {
@@ -97,6 +109,7 @@
 
         // ---- 4. Push location to Firebase ----
         db.ref('locations/' + userId).set({
+          name: userName,
           lat: lat,
           lng: lng,
           timestamp: Date.now()
@@ -115,6 +128,38 @@
   } else {
     statusEl.textContent = "Geolocation not supported by this browser.";
   }
+
+  // ---- 5. Listen for EVERYONE's location (including our own) and draw markers ----
+  db.ref('locations').on('value', (snapshot) => {
+    const allLocations = snapshot.val() || {};
+
+    Object.keys(allLocations).forEach((id) => {
+      if (id === userId) return; // skip ourselves, we already draw our own marker above
+
+      const person = allLocations[id];
+      if (!person || typeof person.lat !== 'number' || typeof person.lng !== 'number') return;
+
+      if (otherMarkers[id]) {
+        otherMarkers[id].setLatLng([person.lat, person.lng]);
+      } else {
+        otherMarkers[id] = L.marker([person.lat, person.lng], {
+          icon: L.divIcon({
+            className: 'other-user-icon',
+            html: `<div style="background:#e74c3c;color:white;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap;">${person.name || 'Unknown'}</div>`,
+            iconSize: null
+          })
+        }).addTo(map);
+      }
+    });
+
+    // Remove markers for anyone no longer in the database
+    Object.keys(otherMarkers).forEach((id) => {
+      if (!allLocations[id]) {
+        map.removeLayer(otherMarkers[id]);
+        delete otherMarkers[id];
+      }
+    });
+  });
 </script>
 
 </body>
