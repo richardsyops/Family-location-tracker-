@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Family Live Location Tracker</title>
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: sans-serif;
+  }
+  #map {
+    height: 100vh;
+    width: 100%;
+  }
+  #status {
+    position: absolute;
+    top: 10px;
+    left: 50px;
+    z-index: 1000;
+    background: white;
+    padding: 8px 14px;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div id="status">Getting your location...</div>
+<div id="map"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Firebase (compat SDK - works with plain <script> tags, no build tools needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<script>
+  // ---- 1. Firebase setup ----
+  const firebaseConfig = {
+    apiKey: "AIzaSyB_gJ5fqObdoajcnyqjvFlf5TRdl4U2oDQ",
+    authDomain: "family-safety-tracking.firebaseapp.com",
+    databaseURL: "https://family-safety-tracking-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "family-safety-tracking",
+    storageBucket: "family-safety-tracking.firebasestorage.app",
+    messagingSenderId: "778400009939",
+    appId: "1:778400009939:web:29ed4eb571e3860c8d0e26"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  // Give this device/user a simple ID for now (we'll make this smarter later)
+  const userId = "me"; // TODO: replace with real user login later
+
+  // ---- 2. Map setup ----
+  const map = L.map('map').setView([9.0820, 8.6753], 6); // default: center of Nigeria
+
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    maxZoom: 19
+  }).addTo(map);
+
+  let marker = null;
+  let accuracyCircle = null;
+  const statusEl = document.getElementById('status');
+
+  // ---- 3. Get and watch the browser's GPS location ----
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const accuracy = position.coords.accuracy; // in meters
+
+        statusEl.textContent = `Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)} (±${Math.round(accuracy)}m)`;
+
+        // Move the map + marker
+        if (!marker) {
+          marker = L.marker([lat, lng]).addTo(map);
+          accuracyCircle = L.circle([lat, lng], { radius: accuracy, color: '#3388ff', fillOpacity: 0.1 }).addTo(map);
+          map.setView([lat, lng], 16);
+        } else {
+          marker.setLatLng([lat, lng]);
+          accuracyCircle.setLatLng([lat, lng]);
+          accuracyCircle.setRadius(accuracy);
+        }
+
+        // ---- 4. Push location to Firebase ----
+        db.ref('locations/' + userId).set({
+          lat: lat,
+          lng: lng,
+          timestamp: Date.now()
+        });
+      },
+      (error) => {
+        statusEl.textContent = "Location error: " + error.message;
+        console.error(error);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 5000,
+        timeout: 10000
+      }
+    );
+  } else {
+    statusEl.textContent = "Geolocation not supported by this browser.";
+  }
+</script>
+
+</body>
+</html>
