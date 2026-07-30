@@ -131,7 +131,8 @@
 
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-    maxZoom: 19
+    maxZoom: 19,
+    maxNativeZoom: 17 // Esri often has no real imagery data past this zoom for many areas; this makes Leaflet zoom into the last available tile instead of showing blanks
   }).addTo(map);
 
   let marker = null;
