@@ -70,6 +70,13 @@
     color: #777;
     font-size: 12px;
   }
+  #sidebar-list li .distance {
+    display: block;
+    color: #2980b9;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 2px;
+  }
   #sidebar-toggle {
     position: absolute;
     top: 10px;
@@ -155,6 +162,34 @@
     if (hours < 24) return hours + 'h ago';
     const days = Math.floor(hours / 24);
     return days + 'd ago';
+  }
+
+  // ---- Distance & direction helpers ----
+  function distanceMeters(lat1, lng1, lat2, lng2) {
+    const R = 6371000; // Earth radius in meters
+    const toRad = (deg) => deg * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  function formatDistance(meters) {
+    if (meters < 1000) return Math.round(meters) + 'm';
+    return (meters / 1000).toFixed(1) + 'km';
+  }
+
+  function bearingDirection(lat1, lng1, lat2, lng2) {
+    const toRad = (deg) => deg * Math.PI / 180;
+    const toDeg = (rad) => rad * 180 / Math.PI;
+    const y = Math.sin(toRad(lng2 - lng1)) * Math.cos(toRad(lat2));
+    const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+      Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lng2 - lng1));
+    let bearing = (toDeg(Math.atan2(y, x)) + 360) % 360;
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return directions[Math.round(bearing / 45) % 8];
   }
 
   // ---- Wake Lock: try to keep the screen from auto-locking while this page is open ----
@@ -285,7 +320,16 @@
 
         const li = document.createElement('li');
         const isMe = id === userId;
-        li.innerHTML = `<span class="person-name">${person.name || 'Unknown'}${isMe ? ' (you)' : ''}</span><span class="last-seen">${timeAgo(person.timestamp)}</span>`;
+
+        let distanceLine = '';
+        if (!isMe && lastKnownLat !== null && lastKnownLng !== null &&
+            typeof person.lat === 'number' && typeof person.lng === 'number') {
+          const dist = distanceMeters(lastKnownLat, lastKnownLng, person.lat, person.lng);
+          const dir = bearingDirection(lastKnownLat, lastKnownLng, person.lat, person.lng);
+          distanceLine = `<span class="distance">${formatDistance(dist)} ${dir}</span>`;
+        }
+
+        li.innerHTML = `<span class="person-name">${person.name || 'Unknown'}${isMe ? ' (you)' : ''}</span><span class="last-seen">${timeAgo(person.timestamp)}</span>${distanceLine}`;
 
         li.addEventListener('click', () => {
           if (typeof person.lat === 'number' && typeof person.lng === 'number') {
