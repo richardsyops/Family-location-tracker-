@@ -311,6 +311,37 @@
     if (document.visibilityState === 'visible') requestWakeLock();
   });
 
+  // ---- Auto-reload: keeps GPS/Firebase connections fresh after being offline or backgrounded ----
+
+  // 1. If the phone loses and regains internet, reload so Firebase/GPS reconnect cleanly
+  window.addEventListener('online', () => {
+    statusEl.textContent = "Back online, reloading...";
+    setTimeout(() => location.reload(), 1000);
+  });
+
+  // Show a visible warning while offline, since location won't update until connection returns
+  window.addEventListener('offline', () => {
+    statusEl.textContent = "⚠️ No internet connection - location paused";
+  });
+
+  // 2. If the tab was hidden (screen off / switched apps) for more than 2 minutes, reload on return.
+  // Mobile browsers often silently stall the GPS watch after long backgrounding, so a fresh
+  // reload is more reliable than trying to resume the old one.
+  let hiddenAt = null;
+  const STALE_BACKGROUND_MS = 2 * 60 * 1000; // 2 minutes
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
+    } else if (document.visibilityState === 'visible' && hiddenAt) {
+      const hiddenFor = Date.now() - hiddenAt;
+      hiddenAt = null;
+      if (hiddenFor > STALE_BACKGROUND_MS) {
+        location.reload();
+      }
+    }
+  });
+
   // ---- 3. Sign in anonymously first. Everything else only starts once we're authenticated. ----
   statusEl.textContent = "Signing in...";
 
