@@ -77,6 +77,25 @@
     font-weight: 600;
     margin-top: 2px;
   }
+  #sidebar-list li .battery {
+    display: inline-block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: #555;
+  }
+  #sidebar-list li .battery.low {
+    color: #c0392b;
+    font-weight: bold;
+  }
+  #edit-name-btn {
+    background: none;
+    border: none;
+    color: #2980b9;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 6px;
+  }
   #sidebar-toggle {
     position: absolute;
     top: 10px;
@@ -97,7 +116,7 @@
 <div id="status">Getting your location...</div>
 <button id="sidebar-toggle">☰ Family</button>
 <div id="sidebar" class="hidden">
-  <h3>Family Members</h3>
+  <h3>Family Members <button id="edit-name-btn">✏️ Edit my name</button></h3>
   <ul id="sidebar-list"></ul>
 </div>
 <div id="map"></div>
@@ -150,6 +169,34 @@
 
   document.getElementById('sidebar-toggle').addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('hidden');
+  });
+
+  // ---- Name editing, limited to once every 3 days ----
+  const NAME_EDIT_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+  document.getElementById('edit-name-btn').addEventListener('click', () => {
+    const lastChanged = parseInt(localStorage.getItem('trackerNameChangedAt') || '0', 10);
+    const msSinceChange = Date.now() - lastChanged;
+
+    if (lastChanged && msSinceChange < NAME_EDIT_COOLDOWN_MS) {
+      const msLeft = NAME_EDIT_COOLDOWN_MS - msSinceChange;
+      const daysLeft = Math.ceil(msLeft / (24 * 60 * 60 * 1000));
+      alert(`You can change your name again in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`);
+      return;
+    }
+
+    const newName = prompt("Enter your new name:", userName);
+    if (newName && newName.trim() && newName.trim() !== userName) {
+      userName = newName.trim();
+      localStorage.setItem('trackerUserName', userName);
+      localStorage.setItem('trackerNameChangedAt', Date.now().toString());
+
+      // Push the updated name immediately so family sees it right away
+      const currentUserId = auth.currentUser && auth.currentUser.uid;
+      if (currentUserId) {
+        db.ref('locations/' + currentUserId).update({ name: userName });
+      }
+    }
   });
 
   function timeAgo(timestamp) {
@@ -225,6 +272,26 @@
 
     let lastKnownLat = null;
     let lastKnownLng = null;
+
+    // ---- Battery status sharing ----
+    let batteryLevel = null;
+    let batteryCharging = null;
+
+    if (navigator.getBattery) {
+      navigator.getBattery().then((battery) => {
+        function pushBatteryStatus() {
+          batteryLevel = Math.round(battery.level * 100);
+          batteryCharging = battery.charging;
+          db.ref('locations/' + userId).update({
+            battery: batteryLevel,
+            charging: batteryCharging
+          });
+        }
+        pushBatteryStatus(); // initial push
+        battery.addEventListener('levelchange', pushBatteryStatus);
+        battery.addEventListener('chargingchange', pushBatteryStatus);
+      }).catch((err) => console.warn('Battery status not available:', err.message));
+    }
 
     // ---- 4. Get and watch the browser's GPS location ----
     if (navigator.geolocation) {
@@ -329,7 +396,13 @@
           distanceLine = `<span class="distance">${formatDistance(dist)} ${dir}</span>`;
         }
 
-        li.innerHTML = `<span class="person-name">${person.name || 'Unknown'}${isMe ? ' (you)' : ''}</span><span class="last-seen">${timeAgo(person.timestamp)}</span>${distanceLine}`;
+        let batteryLine = '';
+        if (typeof person.battery === 'number') {
+          const isLow = person.battery <= 20 && !person.charging;
+          batteryLine = `<span class="battery${isLow ? ' low' : ''}">🔋 ${person.battery}%${person.charging ? ' ⚡' : ''}</span>`;
+        }
+
+        li.innerHTML = `<span class="person-name">${person.name || 'Unknown'}${isMe ? ' (you)' : ''}</span><span class="last-seen">${timeAgo(person.timestamp)}</span>${distanceLine}${batteryLine}`;
 
         li.addEventListener('click', () => {
           if (typeof person.lat === 'number' && typeof person.lng === 'number') {
