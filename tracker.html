@@ -129,6 +129,20 @@
     background: #c0392b;
     animation: sos-pulse 1s infinite;
   }
+  #shake-btn {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 1001;
+    background: white;
+    color: #333;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    cursor: pointer;
+  }
   @keyframes sos-pulse {
     0% { box-shadow: 0 0 0 0 rgba(231,76,60,0.7); }
     70% { box-shadow: 0 0 0 20px rgba(231,76,60,0); }
@@ -160,6 +174,7 @@
 </div>
 <div id="map"></div>
 <button id="sos-btn">🆘 SOS</button>
+<button id="shake-btn">⚪ Shock Detection OFF</button>
 
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -317,24 +332,108 @@
     let sosActive = false;
     const sosBtn = document.getElementById('sos-btn');
 
+    function activateSos() {
+      if (sosActive) return;
+      sosActive = true;
+      sosBtn.textContent = "🆘 Cancel SOS";
+      sosBtn.classList.add('active');
+      db.ref('locations/' + userId).update({ sos: true, sosAt: Date.now() });
+    }
+
+    function deactivateSos() {
+      if (!sosActive) return;
+      sosActive = false;
+      sosBtn.textContent = "🆘 SOS";
+      sosBtn.classList.remove('active');
+      db.ref('locations/' + userId).update({ sos: false, sosAt: null });
+    }
+
     sosBtn.addEventListener('click', () => {
       if (!sosActive) {
         const confirmSos = confirm("Send an SOS alert to your family with your current location?");
         if (!confirmSos) return;
-        sosActive = true;
-        sosBtn.textContent = "🆘 Cancel SOS";
-        sosBtn.classList.add('active');
+        activateSos();
       } else {
-        sosActive = false;
-        sosBtn.textContent = "🆘 SOS";
-        sosBtn.classList.remove('active');
+        deactivateSos();
       }
-
-      db.ref('locations/' + userId).update({
-        sos: sosActive,
-        sosAt: sosActive ? Date.now() : null
-      });
     });
+
+    // ---- Shock / fall detection: watches the phone's motion sensor for a sudden violent jolt ----
+    const shakeBtn = document.getElementById('shake-btn');
+    let shakeEnabled = false;
+    const SHOCK_THRESHOLD = 35; // m/s^2 of combined acceleration - a hard jolt/fall/drop, not normal walking
+    let lastShockCheck = 0;
+    let shockCountdownTimer = null;
+
+    function handleMotion(event) {
+      const now = Date.now();
+      if (now - lastShockCheck < 300) return; // throttle checks a bit
+      lastShockCheck = now;
+
+      const acc = event.accelerationIncludingGravity;
+      if (!acc || acc.x === null) return;
+
+      const magnitude = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+
+      if (magnitude > SHOCK_THRESHOLD && !sosActive && !shockCountdownTimer) {
+        let secondsLeft = 10;
+        const banner = document.createElement('div');
+        banner.id = 'shock-banner';
+        banner.style.cssText = 'position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:2000;background:#c0392b;color:white;padding:14px 20px;border-radius:10px;font-size:14px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,0.4);';
+        banner.innerHTML = `⚠️ Possible fall/impact detected!<br>Sending SOS in <span id="shock-count">${secondsLeft}</span>s.<br><button id="shock-cancel-btn" style="margin-top:8px;background:white;color:#c0392b;border:none;padding:6px 14px;border-radius:6px;font-weight:bold;">I'm OK, Cancel</button>`;
+        document.body.appendChild(banner);
+
+        shockCountdownTimer = setInterval(() => {
+          secondsLeft--;
+          const countEl = document.getElementById('shock-count');
+          if (countEl) countEl.textContent = secondsLeft;
+          if (secondsLeft <= 0) {
+            clearInterval(shockCountdownTimer);
+            shockCountdownTimer = null;
+            banner.remove();
+            activateSos();
+          }
+        }, 1000);
+
+        document.getElementById('shock-cancel-btn').addEventListener('click', () => {
+          clearInterval(shockCountdownTimer);
+          shockCountdownTimer = null;
+          banner.remove();
+        });
+      }
+    }
+
+    function enableShakeDetection() {
+      // iOS 13+ requires an explicit permission prompt triggered by a user tap
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        DeviceMotionEvent.requestPermission().then((result) => {
+          if (result === 'granted') {
+            window.addEventListener('devicemotion', handleMotion);
+            shakeEnabled = true;
+            shakeBtn.textContent = "🟢 Shock Detection ON";
+          } else {
+            alert("Motion permission denied - shock detection can't be enabled.");
+          }
+        }).catch((err) => console.warn('Motion permission error:', err.message));
+      } else if ('DeviceMotionEvent' in window) {
+        window.addEventListener('devicemotion', handleMotion);
+        shakeEnabled = true;
+        shakeBtn.textContent = "🟢 Shock Detection ON";
+      } else {
+        alert("This device/browser doesn't support motion detection.");
+      }
+    }
+
+    shakeBtn.addEventListener('click', () => {
+      if (shakeEnabled) {
+        window.removeEventListener('devicemotion', handleMotion);
+        shakeEnabled = false;
+        shakeBtn.textContent = "⚪ Shock Detection OFF";
+      } else {
+        enableShakeDetection();
+      }
+    });
+
     let batteryLevel = null;
     let batteryCharging = null;
 
