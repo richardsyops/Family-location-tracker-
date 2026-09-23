@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Family Live Location Tracker</title>
+
+<!-- Leaflet CSS (third-party) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<!-- Our own styles, one file per area of the app -->
+<link rel="stylesheet" href="css/base.css" />
+<link rel="stylesheet" href="css/map.css" />
+<link rel="stylesheet" href="css/sidebar.css" />
+<link rel="stylesheet" href="css/games.css" />
+<link rel="stylesheet" href="css/auth.css" />
+</head>
+<body>
+
+<!-- Login gate: covers the whole page until the person is logged in AND approved -->
+<div id="auth-overlay">
+  <div id="auth-card">
+
+    <div id="auth-loading-view">
+      <p>Loading...</p>
+    </div>
+
+    <div id="auth-login-view" class="hidden">
+      <h1>📍 Family Tracker</h1>
+      <p id="auth-subtitle">Log in to continue</p>
+      <form id="auth-form">
+        <input id="auth-name" class="hidden" type="text" placeholder="Your name" autocomplete="name" />
+        <input id="auth-email" type="email" placeholder="Email" autocomplete="email" />
+        <input id="auth-password" type="password" placeholder="Password" autocomplete="current-password" />
+        <button id="auth-submit" type="submit">Log in</button>
+      </form>
+      <p id="auth-message"></p>
+      <button id="auth-toggle" class="auth-link-btn" type="button">New here? Request access</button>
+      <button id="auth-forgot" class="auth-link-btn" type="button">Forgot password?</button>
+    </div>
+
+    <div id="auth-waiting-view" class="hidden">
+      <h1>⏳ Waiting for approval</h1>
+      <p>Your request has been sent. You'll get in automatically once it's approved, so you can leave this page open.</p>
+      <button id="auth-logout-btn" class="auth-link-btn" type="button">Log out</button>
+    </div>
+
+  </div>
+</div>
+
+<div id="status">Getting your location...</div>
+<button id="sidebar-toggle">☰ Family</button>
+<button id="games-btn">🎮 Games</button>
+
+<div id="sidebar" class="hidden">
+  <h3>Family Members <button id="edit-name-btn">✏️ Edit my name</button></h3>
+  <ul id="sidebar-list"></ul>
+</div>
+
+<div id="games-modal" class="hidden">
+  <div id="games-modal-inner">
+    <button id="games-close-btn">✕ Close</button>
+
+    <div id="games-menu">
+      <h2>🎮 Games</h2>
+      <button class="game-menu-btn" id="open-ttt-btn">⭕ Tic-Tac-Toe</button>
+      <button class="game-menu-btn" id="open-treasure-btn">🗺️ Treasure Hunt</button>
+    </div>
+
+    <div id="ttt-view" class="hidden">
+      <button class="game-back-btn" id="ttt-back-btn">← Back</button>
+      <h2>⭕ Tic-Tac-Toe</h2>
+      <div id="ttt-status">Loading...</div>
+      <div id="ttt-board"></div>
+      <button class="game-menu-btn" id="ttt-new-btn">Start New Game</button>
+    </div>
+
+    <div id="treasure-view" class="hidden">
+      <button class="game-back-btn" id="treasure-back-btn">← Back</button>
+      <h2>🗺️ Treasure Hunt</h2>
+      <div id="treasure-status">Loading...</div>
+      <div id="treasure-distance"></div>
+      <button class="game-menu-btn" id="treasure-start-btn">Hide Treasure Here (become host)</button>
+      <button class="game-menu-btn" id="treasure-cancel-btn">Cancel Hunt</button>
+    </div>
+  </div>
+</div>
+
+<div id="map"></div>
+<button id="sos-btn">🆘 SOS</button>
+<button id="shake-btn">⚪ Shock Detection OFF</button>
+
+<!-- Third-party libraries. These create global names: L (Leaflet) and firebase -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+<!-- Our code: one entry point, it imports everything else -->
+<script type="module" src="js/main.js"></script>
+
+</body>
+</html>

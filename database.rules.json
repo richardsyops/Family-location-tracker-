@@ -1,0 +1,27 @@
+{
+  "rules": {
+    "approved": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || auth.uid === 'PASTE_ADMIN_UID_HERE')",
+        ".write": "auth != null && auth.uid === 'PASTE_ADMIN_UID_HERE'"
+      }
+    },
+    "pending": {
+      ".read": "auth != null && auth.uid === 'PASTE_ADMIN_UID_HERE'",
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || auth.uid === 'PASTE_ADMIN_UID_HERE')",
+        ".validate": "newData.hasChildren(['name', 'email', 'requestedAt'])"
+      }
+    },
+    "locations": {
+      ".read": "auth != null && root.child('approved').child(auth.uid).val() === true",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid && root.child('approved').child(auth.uid).val() === true"
+      }
+    },
+    "games": {
+      ".read": "auth != null && root.child('approved').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('approved').child(auth.uid).val() === true"
+    }
+  }
+}
