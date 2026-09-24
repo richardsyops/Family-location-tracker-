@@ -1,6 +1,6 @@
 // The login gate. It runs FIRST. The map and everything else only start
 // after requireApproval() finishes, which only happens for approved people.
-import { auth, db } from './firebase.js';
+import { auth, db } from '../firebase.js';
 
 const el = (id) => document.getElementById(id);
 
